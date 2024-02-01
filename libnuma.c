@@ -1882,8 +1882,10 @@ static struct bitmask *__numa_preferred(void)
 			policy != MPOL_BIND)
 		return bmp;
 
-	if (numa_bitmask_weight(bmp) > 1)
+	if (policy == MPOL_PREFERRED && numa_bitmask_weight(bmp) > 1) {
+		errno = EINVAL;
 		numa_error(__FILE__);
+	}
 
 	return bmp;
 }
@@ -1903,8 +1905,11 @@ int numa_preferred(void)
 static void __numa_set_preferred(struct bitmask *bmp)
 {
 	int nodes = numa_bitmask_weight(bmp);
-	if (nodes > 1)
+	if (nodes > 1) {
+		errno = EINVAL;
 		numa_error(__FILE__);
+	}
+
 	setpol(nodes ? MPOL_PREFERRED : MPOL_LOCAL, bmp);
 }
 
@@ -2055,7 +2060,7 @@ __numa_parse_nodestring(const char *s, struct bitmask *allowed_nodes_ptr)
 			goto err;
 		}
 		if (!numa_bitmask_isbitset(allowed_nodes_ptr, arg)) {
-			numa_warn(W_nodeparse, "node argument %d is out of range\n", arg);
+			numa_warn(W_nodeparse, "node argument %ld is out of range\n", arg);
 			goto err;
 		}
 		i = arg;
@@ -2070,7 +2075,7 @@ __numa_parse_nodestring(const char *s, struct bitmask *allowed_nodes_ptr)
 				goto err;
 			}
 			if (!numa_bitmask_isbitset(allowed_nodes_ptr, arg2)) {
-				numa_warn(W_nodeparse, "node argument %d out of range\n", arg2);
+				numa_warn(W_nodeparse, "node argument %ld out of range\n", arg2);
 				goto err;
 			}
 			while (arg <= arg2) {
