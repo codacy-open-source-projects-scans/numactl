@@ -144,8 +144,8 @@ static int numa_find_first(struct bitmask *mask)
  * The following bitmask declarations, bitmask_*() routines, and associated
  * _setbit() and _getbit() routines are:
  * Copyright (c) 2004_2007 Silicon Graphics, Inc. (SGI) All rights reserved.
- * SGI publishes it under the terms of the GNU General Public License, v2,
- * as published by the Free Software Foundation.
+ * SGI publishes it under the terms of the Library GNU General Public License,
+ * v2, as published by the Free Software Foundation.
  */
 static unsigned int
 _getbit(const struct bitmask *bmp, unsigned int n)
@@ -894,6 +894,12 @@ numa_interleave_memory_v2(void *mem, size_t size, struct bitmask *bmp)
 	dombind(mem, size, MPOL_INTERLEAVE, bmp);
 }
 
+void
+numa_weighted_interleave_memory(void *mem, size_t size, struct bitmask *bmp)
+{
+	dombind(mem, size, MPOL_WEIGHTED_INTERLEAVE, bmp);
+}
+
 void numa_tonode_memory(void *mem, size_t size, int node)
 {
 	struct bitmask *nodes;
@@ -1005,6 +1011,25 @@ void *
 numa_alloc_interleaved(size_t size)
 {
 	return numa_alloc_interleaved_subset_v2_int(size, numa_all_nodes_ptr);
+}
+
+void *
+numa_alloc_weighted_interleaved_subset(size_t size, struct bitmask *bmp)
+{
+	char *mem;
+
+	mem = mmap(0, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS,
+		   0, 0);
+	if (mem == (char *)-1)
+		return NULL;
+	dombind(mem, size, MPOL_WEIGHTED_INTERLEAVE, bmp);
+	return mem;
+}
+
+void *
+numa_alloc_weighted_interleaved(size_t size)
+{
+	return numa_alloc_weighted_interleaved_subset(size, numa_all_nodes_ptr);
 }
 
 /*
@@ -2278,6 +2303,7 @@ int numa_has_home_node(void)
 	}
 
 out:
+	numa_bitmask_free(tmp);
 	return has_home_node;
 }
 
