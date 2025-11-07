@@ -45,6 +45,7 @@ libnuma_1.1 {
     numa_parse_bitmap;
     numa_police_memory;
     numa_preferred;
+    numa_preferred_err;
     numa_run_on_node;
     numa_run_on_node_mask;
     numa_sched_getaffinity;
@@ -176,9 +177,17 @@ libnuma_1.7{
 libnuma_2.1{
   global:
     numa_set_weighted_interleave_mask;
+    numa_get_weighted_interleave_mask;
     numa_alloc_weighted_interleaved;
     numa_alloc_weighted_interleaved_subset;
     numa_weighted_interleave_memory;
+  local:
+    *;
+} libnuma_1.7;
+
+libnuma_2.2{
+  global:
+    numa_fail_alloc_on_error;
   local:
     *;
 } libnuma_1.7;

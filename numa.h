@@ -140,6 +140,9 @@ int numa_max_node(void);
 int numa_max_possible_node(void);
 /* Return preferred node */
 int numa_preferred(void);
+/* If the preferred node is unavailable, return an error;
+   otherwise, return the preferred node */
+int numa_preferred_err(void);
 
 /* Return node size and free memory */
 long long numa_node_size64(int node, long long *freep);
@@ -177,6 +180,9 @@ void numa_set_weighted_interleave_mask(struct bitmask *nodemask);
 
 /* Return the current interleaving mask */
 struct bitmask *numa_get_interleave_mask(void);
+
+/* Return the current weighted interleaving mask */
+struct bitmask *numa_get_weighted_interleave_mask(void);
 
 /* allocate a bitmask big enough for all nodes */
 struct bitmask *numa_allocate_nodemask(void);
@@ -322,6 +328,14 @@ void numa_error(char *where);
 /* When true exit the program when a NUMA system call (except numa_available)
    fails */
 extern int numa_exit_on_error;
+
+/* When true exit when libnuma would print a warning. */
+extern int numa_exit_on_warn;
+
+/* When true make numa_alloc functions fail when policy could not be set.
+   Default false. */
+extern int numa_fail_alloc_on_error;
+
 /* Warning function. Can also be overwritten. Default is to print on stderr
    once. */
 void numa_warn(int num, char *fmt, ...);

@@ -64,6 +64,8 @@ numa \- NUMA policy library
 .sp
 .B int numa_preferred(void);
 .br
+.B int numa_preferred_err(void);
+.br
 .B int numa_has_preferred_many(void);
 .br
 .B struct bitmask *numa_preferred_many(void);
@@ -83,6 +85,10 @@ numa \- NUMA policy library
 .BI "void numa_set_interleave_mask(struct bitmask *" nodemask );
 .br
 .BI "void numa_interleave_memory(void *" start ", size_t " size ", struct bitmask *" nodemask );
+.br
+.B struct bitmask *numa_get_weighted_interleave_mask(void);
+.br
+.BI "void numa_set_weighted_interleave_mask(struct bitmask *" nodemask );
 .br
 .BI "void numa_weighted_interleave_memory(void *" start ", size_t " size ", struct bitmask *" nodemask );
 .br
@@ -190,6 +196,8 @@ numa \- NUMA policy library
 .BI "extern int " numa_exit_on_error ;
 .br
 .BI "extern int " numa_exit_on_warn ;
+.br
+.BI "extern int " numa_fail_on_error_error ;
 .br
 .BI "void numa_warn(int " number ", char *" where ", ...);"
 .br
@@ -444,6 +452,10 @@ allocates memory, unless some other policy overrides this.
 .\" order of the current node's zonelist to return the correct
 .\" node.  Need to tighten this up with the syscall results.
 
+.BR numa_preferred_err ()
+Similiar to numa_preferred(), but If the preferred node is unavailable,
+return an error instead of zero.
+
 .BR numa_has_preferred_many ()
 Returns > 0 if the system supports multiple preferred nodes.
 
@@ -511,6 +523,25 @@ target.
 .\" .BR numa_alloc_interleaved ()
 .\" or
 .\" .BR numa_alloc_interleaved_subset ().
+
+.BR numa_get_weighted_interleave_mask ()
+returns the current weighted interleave mask if the task's memory
+allocation policy is weighted interleaving.
+Otherwise, this function returns an empty mask.
+
+.BR numa_set_weighted_interleave_mask ()
+sets the memory weighted interleave mask for the current task to
+.IR nodemask .
+All new memory allocations
+are weighted-interleaved over all nodes in the weighted interleave mask,
+according to the weights in
+.I /sys/kernel/mm/mempolicy/weighted_interleave/node*.
+Interleaving can be turned off again by passing an empty mask
+.RI ( numa_no_nodes ) .
+The weighted interleaving only occurs on the actual page fault that puts a
+new page into the current address space. It is also only a hint: the kernel
+will fall back to other nodes if no memory is available on the weighted
+interleave target.
 
 .BR numa_interleave_memory ()
 interleaves
@@ -1139,6 +1170,11 @@ is set to a non-zero value.
 The default value of
 .I numa_exit_on_error
 is zero.
+When the
+.I numa_fail_alloc_on_error
+variable is set to 1 make
+.I numa_alloc
+functions fail with a NULL return if the policy cannot be set. Default 0.
 
 .BR numa_warn ()
 is a

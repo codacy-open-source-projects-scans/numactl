@@ -17,7 +17,7 @@
    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
    All calls are undefined when numa_available returns an error. */
-#define _GNU_SOURCE 1
+#define _GNU_SOURCE
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -84,6 +84,7 @@ static int has_preferred_many = -1;
 
 int numa_exit_on_error = 0;
 int numa_exit_on_warn = 0;
+int numa_fail_alloc_on_error = 0;
 static void set_sizes(void);
 
 /*
@@ -310,21 +311,33 @@ WEAK void numa_warn(int num, char *fmt, ...)
 
 static void setpol(int policy, struct bitmask *bmp)
 {
-	if (set_mempolicy(policy, bmp->maskp, bmp->size + 1) < 0)
+	if (set_mempolicy(policy, bmp->maskp, bmp->size) < 0)
 		numa_error("set_mempolicy");
 }
 
 static void getpol(int *oldpolicy, struct bitmask *bmp)
 {
-	if (get_mempolicy(oldpolicy, bmp->maskp, bmp->size + 1, 0, 0) < 0)
+	if (get_mempolicy(oldpolicy, bmp->maskp, bmp->size, 0, 0) < 0)
 		numa_error("get_mempolicy");
 }
 
-static void dombind(void *mem, size_t size, int pol, struct bitmask *bmp)
+static int dombind(void *mem, size_t size, int pol, struct bitmask *bmp)
 {
-	if (mbind(mem, size, pol, bmp ? bmp->maskp : NULL, bmp ? bmp->size + 1 : 0,
-		  mbind_flags) < 0)
+	if (mbind(mem, size, pol, bmp ? bmp->maskp : NULL, bmp ? bmp->size : 0,
+		  mbind_flags) < 0) {
 		numa_error("mbind");
+		return -1;
+	}
+	return 0;
+}
+
+static void *dombind_or_free(void *mem, size_t size, int pol, struct bitmask *bmp)
+{
+	if (dombind(mem, size, pol, bmp) < 0 && numa_fail_alloc_on_error) {
+		munmap(mem, size);
+		return NULL;
+	}
+	return mem;
 }
 
 /* (undocumented) */
@@ -423,14 +436,17 @@ set_nodemask_size(void)
 done:
 	if (nodemask_sz == 0) {/* fall back on error */
 		int pol;
-		unsigned long *mask = NULL;
+		unsigned long *mask = NULL, *origmask;
 		nodemask_sz = 16;
 		do {
 			nodemask_sz <<= 1;
+			origmask = mask;
 			mask = realloc(mask, nodemask_sz / 8 + sizeof(unsigned long));
-			if (!mask)
+			if (!mask) {
+				free(origmask);
 				return;
-		} while (get_mempolicy(&pol, mask, nodemask_sz + 1, 0, 0) < 0 && errno == EINVAL &&
+			}
+		} while (get_mempolicy(&pol, mask, nodemask_sz, 0, 0) < 0 && errno == EINVAL &&
 				nodemask_sz < 4096*8);
 		free(mask);
 	}
@@ -641,7 +657,7 @@ set_preferred_many(void)
 	if (!tmp || !bmp)
 		goto out;
 
-	if (get_mempolicy(&oldp, bmp->maskp, bmp->size + 1, 0, 0) < 0)
+	if (get_mempolicy(&oldp, bmp->maskp, bmp->size, 0, 0) < 0)
 		goto out;
 
 	if (set_mempolicy(MPOL_PREFERRED_MANY, tmp->maskp, tmp->size) == 0) {
@@ -987,7 +1003,7 @@ void *numa_alloc_interleaved_subset_v1(size_t size, const nodemask_t *mask)
 		return NULL;
 	bitmask.maskp = (unsigned long *)mask;
 	bitmask.size  = sizeof(nodemask_t);
-	dombind(mem, size, MPOL_INTERLEAVE, &bitmask);
+	mem = dombind_or_free(mem, size, MPOL_INTERLEAVE, &bitmask);
 	return mem;
 }
 
@@ -1000,7 +1016,7 @@ void *numa_alloc_interleaved_subset_v2(size_t size, struct bitmask *bmp)
 		   0, 0);
 	if (mem == (char *)-1)
 		return NULL;
-	dombind(mem, size, MPOL_INTERLEAVE, bmp);
+	mem = dombind_or_free(mem, size, MPOL_INTERLEAVE, bmp);
 	return mem;
 }
 
@@ -1022,7 +1038,7 @@ numa_alloc_weighted_interleaved_subset(size_t size, struct bitmask *bmp)
 		   0, 0);
 	if (mem == (char *)-1)
 		return NULL;
-	dombind(mem, size, MPOL_WEIGHTED_INTERLEAVE, bmp);
+	mem = dombind_or_free(mem, size, MPOL_WEIGHTED_INTERLEAVE, bmp);
 	return mem;
 }
 
@@ -1107,6 +1123,21 @@ numa_get_interleave_mask_v2(void)
 	return bmp;
 }
 
+struct bitmask *
+numa_get_weighted_interleave_mask(void)
+{
+	int oldpolicy = 0;
+	struct bitmask *bmp;
+
+	bmp = numa_allocate_nodemask();
+	if (!bmp)
+		return NULL;
+	getpol(&oldpolicy, bmp);
+	if (oldpolicy != MPOL_WEIGHTED_INTERLEAVE)
+		copy_bitmask_to_bitmask(numa_no_nodes_ptr, bmp);
+	return bmp;
+}
+
 /* (undocumented) */
 int numa_get_interleave_node(void)
 {
@@ -1130,7 +1161,8 @@ void *numa_alloc_onnode(size_t size, int node)
 	if (mem == (char *)-1)
 		mem = NULL;
 	else
-		dombind(mem, size, bind_policy, bmp);
+		mem = dombind_or_free(mem, size, bind_policy, bmp);
+
 	numa_bitmask_free(bmp);
 	return mem;
 }
@@ -1143,7 +1175,7 @@ void *numa_alloc_local(size_t size)
 	if (mem == (char *)-1)
 		mem =  NULL;
 	else
-		dombind(mem, size, MPOL_LOCAL, NULL);
+		mem = dombind_or_free(mem, size, MPOL_LOCAL, NULL);
 	return mem;
 }
 
@@ -1297,7 +1329,7 @@ struct bitmask *numa_get_mems_allowed(void)
 	bmp = numa_allocate_nodemask();
 	if (!bmp)
 		return NULL;
-	if (get_mempolicy(NULL, bmp->maskp, bmp->size + 1, 0,
+	if (get_mempolicy(NULL, bmp->maskp, bmp->size, 0,
 				MPOL_F_MEMS_ALLOWED) < 0)
 		numa_error("get_mempolicy");
 	return bmp;
@@ -1383,7 +1415,14 @@ numa_parse_bitmap_v2(char *line, struct bitmask *mask)
 static void init_node_cpu_mask_v2(void)
 {
 	int nnodes = numa_max_possible_node_v2_int() + 1;
-	node_cpu_mask_v2 = calloc (nnodes, sizeof(struct bitmask *));
+	struct bitmask **new_ncm, **null_ncm = NULL;
+	new_ncm = calloc (nnodes, sizeof(struct bitmask *));
+	/* Check for races with another thread */
+	if (new_ncm && !__atomic_compare_exchange_n(&node_cpu_mask_v2, &null_ncm,
+			new_ncm, 0,
+			__ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE)) {
+		free(new_ncm);
+	}
 }
 
 static void cleanup_node_cpu_mask_v2(void)
@@ -1463,7 +1502,7 @@ numa_node_to_cpus_v1(int node, unsigned long *buffer, int bufferlen)
 	}
 
 	free(line);
-	memcpy(buffer, mask, buflen_needed);
+	memmove(buffer, mask, buflen_needed);
 
 	/* slightly racy, see above */
 	if (node_cpu_mask_v1[node]) {
@@ -1503,7 +1542,7 @@ numa_node_to_cpus_v2(int node, struct bitmask *buffer)
 	size_t len = 0;
 	struct bitmask *mask;
 
-	if (!node_cpu_mask_v2)
+	if (!__atomic_load_n(&node_cpu_mask_v2, __ATOMIC_CONSUME))
 		init_node_cpu_mask_v2();
 
 	if (node > nnodes) {
@@ -1932,7 +1971,7 @@ static struct bitmask *__numa_preferred(void)
 	return bmp;
 }
 
-int numa_preferred(void)
+int numa_preferred_err(void)
 {
 	int first_node = 0;
 	struct bitmask *bmp;
@@ -1940,7 +1979,17 @@ int numa_preferred(void)
 	bmp = __numa_preferred();
 	first_node = numa_find_first(bmp);
 	numa_bitmask_free(bmp);
-	
+
+	return first_node;
+}
+
+int numa_preferred(void)
+{
+	int first_node = 0;
+
+	first_node = numa_preferred_err();
+	first_node = first_node >= 0 ? first_node : 0;
+
 	return first_node;
 }
 
