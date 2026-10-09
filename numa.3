@@ -149,6 +149,8 @@ numa \- NUMA policy library
 .br
 .BI "int numa_node_to_cpus(int " node ", struct bitmask *" mask ");
 .br
+.BI "int numa_is_cpuless_node(int " node_id ");
+.br
 .BI "void numa_node_to_cpu_update();"
 .br
 .BI "int numa_node_of_cpu(int " cpu ");
@@ -958,6 +960,12 @@ will be set to
 .I ERANGE
 and \-1 returned. On success 0 is returned.
 
+.BR numa_is_cpuless_node ()
+returns 1 if the specified node
+.I node_id
+is a cpuless NUMA node (i.e. such as a memory-only CXL node). Returns 0 if
+it isn't  a cpuless node. Returns -1 on any errors.
+
 .BR numa_node_to_cpu_update ()
 Mark cpus bitmask of all nodes stale, then get the latest bitmask by calling
 .BR numa_node_to_cpus ()
@@ -1206,6 +1214,11 @@ to run with libnuma version 2.
 Source codes written for libnuma version 1 may be re-compiled without
 change with version 2 installed. To do so, in the code's Makefile add
 this option to CFLAGS:  -DNUMA_VERSION1_COMPATIBILITY
+
+.SH SECURITY
+.B libnuma
+is not intended to be used with untrusted input data, for example
+for cpu or node configuration strings.
 
 .SH THREAD SAFETY
 .I numa_set_bind_policy

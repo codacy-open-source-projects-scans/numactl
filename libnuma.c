@@ -2152,7 +2152,8 @@ __numa_parse_nodestring(const char *s, struct bitmask *allowed_nodes_ptr)
 			numa_warn(W_nodeparse, "unparseable node description `%s'\n", s);
 			goto err;
 		}
-		if (!numa_bitmask_isbitset(allowed_nodes_ptr, arg)) {
+		if (arg >= allowed_nodes_ptr->size ||
+		    !numa_bitmask_isbitset(allowed_nodes_ptr, arg)) {
 			numa_warn(W_nodeparse, "node argument %ld is out of range\n", arg);
 			goto err;
 		}
@@ -2167,7 +2168,8 @@ __numa_parse_nodestring(const char *s, struct bitmask *allowed_nodes_ptr)
 				numa_warn(W_nodeparse, "missing node argument %s\n", s);
 				goto err;
 			}
-			if (!numa_bitmask_isbitset(allowed_nodes_ptr, arg2)) {
+			if (arg2 >= allowed_nodes_ptr->size ||
+			    !numa_bitmask_isbitset(allowed_nodes_ptr, arg2)) {
 				numa_warn(W_nodeparse, "node argument %ld out of range\n", arg2);
 				goto err;
 			}
@@ -2266,7 +2268,7 @@ __numa_parse_cpustring(const char *s, struct bitmask *allowed_cpus_ptr)
 			numa_warn(W_cpuparse, "unparseable cpu description `%s'\n", s);
 			goto err;
 		}
-		if (!numa_bitmask_isbitset(allowed_cpus_ptr, arg)) {
+		if (arg >= conf_cpus) {
 			numa_warn(W_cpuparse, "cpu argument %s is out of range\n", s);
 			goto err;
 		}
@@ -2281,7 +2283,7 @@ __numa_parse_cpustring(const char *s, struct bitmask *allowed_cpus_ptr)
 				numa_warn(W_cpuparse, "missing cpu argument %s\n", s);
 				goto err;
 			}
-			if (!numa_bitmask_isbitset(allowed_cpus_ptr, arg2)) {
+			if (arg2 >= conf_cpus) {
 				numa_warn(W_cpuparse, "cpu argument %s out of range\n", s);
 				goto err;
 			}
@@ -2364,4 +2366,27 @@ int numa_set_mempolicy_home_node(void *start, unsigned long len, int home_node, 
 	}
 
 	return 0;
+}
+
+ /* return 1 if the node is a cpuless node, 0 when it's not, and -1 on any error */
+int numa_is_cpuless_node(int node_id)
+{
+	struct bitmask *cpumask;
+	int ret = 0;
+
+	if (node_id < 0 || node_id > numa_max_node()) {
+		errno = ERANGE;
+		return -1;
+	}
+
+	cpumask = numa_allocate_cpumask();
+	if (!cpumask)
+		return -1;
+
+	numa_node_to_cpus(node_id, cpumask);
+	if (!numa_bitmask_weight(cpumask))
+		ret = 1;
+
+	numa_bitmask_free(cpumask);
+	return ret;
 }
