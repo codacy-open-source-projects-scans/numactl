@@ -51,6 +51,7 @@ check_PROGRAMS = \
 	test/migrate_pages \
 	test/move_pages \
 	test/mynode \
+	test/negative-node \
 	test/node-parse \
 	test/nodemap \
 	test/pagesize \
@@ -71,6 +72,7 @@ EXTRA_DIST += \
 	test/regress2 \
 	test/regress-io \
 	test/runltp \
+	test/shm-range \
 	test/shmtest
 
 test_cpuless_SOURCES = test/cpuless.c
@@ -93,6 +95,9 @@ test_move_pages_LDADD = libnuma.la
 
 test_mynode_SOURCES = test/mynode.c
 test_mynode_LDADD = libnuma.la
+
+test_negative_node_SOURCES = test/negative-node.c
+test_negative_node_LDADD = libnuma.la
 
 test_node_parse_SOURCES = test/node-parse.c util.c
 test_node_parse_LDADD = libnuma.la
@@ -141,9 +146,11 @@ TESTS = \
 	test/cpuless \
 	test/distance \
 	test/move_pages \
+	test/negative-node \
 	test/nodemap \
 	test/numademo \
 	test/regress \
+	test/shm-range \
 	test/tbitmap
 
 # These are known to be broken:
